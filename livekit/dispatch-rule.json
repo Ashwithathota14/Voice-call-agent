@@ -1,0 +1,4 @@
+{
+  "name": "RingTrunk inbound",
+  "rule": { "dispatchRuleIndividual": { "roomPrefix": "call-" } }
+}

@@ -1,0 +1,7 @@
+{
+  "trunk": {
+    "name": "RingTrunk inbound",
+    "numbers": ["9XXXXXXXXX", "+919XXXXXXXXX", "09XXXXXXXXX", "919XXXXXXXXX"],
+    "allowed_addresses": ["<RINGTRUNK_SOURCE_IP>"]
+  }
+}
