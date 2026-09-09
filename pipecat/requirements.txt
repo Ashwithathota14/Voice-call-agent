@@ -1,4 +1,5 @@
-pipecat-ai[livekit,deepgram,openai,cartesia,silero]>=1.0
+pipecat-ai[livekit,deepgram,groq,cartesia,silero]>=1.0
 livekit-api>=1.0
 fastapi>=0.115
 uvicorn>=0.30
+python-dotenv>=1.0

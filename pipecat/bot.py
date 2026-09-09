@@ -3,7 +3,7 @@
 The phone leg reaches the room through LiveKit SIP and a RingTrunk trunk; this
 bot only ever sees a LiveKit room. Speech in, speech out:
 
-    caller -> LiveKit room -> Deepgram STT -> OpenAI LLM -> Cartesia TTS -> caller
+    caller -> LiveKit room -> Deepgram STT -> Groq LLM -> Cartesia TTS -> caller
 
 Written against Pipecat 1.3 (pipecat.transports.livekit.transport, LLMContext).
 
@@ -14,7 +14,10 @@ import asyncio
 import os
 import sys
 
+from dotenv import load_dotenv
 from livekit import api
+
+load_dotenv()
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import LLMMessagesAppendFrame
 from pipecat.pipeline.pipeline import Pipeline
@@ -24,7 +27,7 @@ from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import LLMContextAggregatorPair
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
-from pipecat.services.openai.llm import OpenAILLMService
+from pipecat.services.groq.llm import GroqLLMService
 from pipecat.transports.livekit.transport import LiveKitParams, LiveKitTransport
 
 SYSTEM_PROMPT = (
@@ -57,7 +60,7 @@ async def run_bot(room_name: str) -> None:
     )
 
     stt = DeepgramSTTService(api_key=os.environ["DEEPGRAM_API_KEY"])
-    llm = OpenAILLMService(api_key=os.environ["OPENAI_API_KEY"], model="gpt-4o-mini")
+    llm = GroqLLMService(api_key=os.environ["GROQ_API_KEY"], model="llama-3.3-70b-versatile")
     tts = CartesiaTTSService(
         api_key=os.environ["CARTESIA_API_KEY"],
         voice_id=os.environ.get("CARTESIA_VOICE_ID", "79a125e8-cd45-4c13-8a67-188112f4dd22"),
