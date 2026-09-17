@@ -1,0 +1,5 @@
+Scout Setup Guide (models, APIs, RingTrunk/LiveKit trunk setup, webhook setup):
+https://claude.ai/code/artifact/2929e47d-03ce-4a69-81e5-0ea8651f933e
+
+Scout Call Pipeline (architecture overview):
+https://claude.ai/code/artifact/20c60289-42e5-4204-98bd-bd232c0d484a

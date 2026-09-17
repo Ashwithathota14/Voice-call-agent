@@ -2,3 +2,8 @@
 __pycache__/
 *.pyc
 .venv/
+
+# Rendered trunk configs — hold real RingTrunk credentials, generated from .env
+# by livekit/render_trunk_configs.py. The checked-in outbound-trunk.json /
+# inbound-trunk.json stay placeholders; only *.local.json carries secrets.
+livekit/*.local.json
