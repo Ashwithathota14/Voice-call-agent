@@ -10,6 +10,10 @@ bot.py as its own process.
 
 Usage:
     python run_scenario.py scenarios/not_good_time.json
+    python run_scenario.py scenarios/not_good_time.json --listen   # also opens a
+                                                                    # browser tab so
+                                                                    # you can hear
+                                                                    # both bots live
 
 After both bots finish, prints PASS/FAIL against the scenario's
 expected_end_reason and the full transcript, and points at the saved
@@ -21,6 +25,8 @@ import json
 import os
 import sys
 import time
+import urllib.parse
+import webbrowser
 
 from dotenv import load_dotenv
 from livekit import api
@@ -28,9 +34,29 @@ from livekit import api
 load_dotenv()
 
 
+def listener_join_url(room_name: str) -> str:
+    """Join link for a silent listener: subscribes to both bots' audio but can't
+    publish, so it never interferes with the recruiter's STT (no mic feedback
+    picked up as a third voice in the room)."""
+    token = (
+        api.AccessToken()
+        .with_identity("listener")
+        .with_name("Listener")
+        .with_grants(api.VideoGrants(room_join=True, room=room_name, can_publish=False))
+        .to_jwt()
+    )
+    return "https://meet.livekit.io/custom?" + urllib.parse.urlencode(
+        {"liveKitUrl": os.environ["LIVEKIT_URL"], "token": token}
+    )
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("scenario_file", help="Path to a scenarios/*.json file")
+    parser.add_argument(
+        "--listen", action="store_true",
+        help="Open a browser tab as a silent listener so you can hear the two bots talk live",
+    )
     args = parser.parse_args()
 
     with open(args.scenario_file, encoding="utf-8") as f:
@@ -69,6 +95,12 @@ async def main() -> None:
     print(f"Room: {room_name}")
     print(f"Test case: {scenario.get('test_case', '(none given)')}")
     print(f"Expected:  {scenario.get('expected', '(none given)')}")
+
+    if args.listen:
+        join_url = listener_join_url(room_name)
+        print(f"\nListener join link (opening now):\n\n{join_url}\n", flush=True)
+        webbrowser.open(join_url)
+
     print("Launching recruiter + candidate bots as separate processes...\n", flush=True)
 
     # Launched together, not staggered: the candidate bot needs several seconds of its
@@ -97,16 +129,33 @@ async def main() -> None:
 
     expected_end_reason = scenario.get("expected_end_reason")
     actual_end_reason = result.get("end_reason")
-    passed = expected_end_reason is None or actual_end_reason == expected_end_reason
+    end_reason_passed = expected_end_reason is None or actual_end_reason == expected_end_reason
 
-    print(f"\n=== {'PASS' if passed else 'FAIL'} ===")
+    print(f"\n=== end_reason check: {'PASS' if end_reason_passed else 'FAIL'} ===")
     print(f"Expected end_reason: {expected_end_reason!r}")
     print(f"Actual end_reason:   {actual_end_reason!r}")
     print("\n--- Transcript ---\n")
     print(result.get("transcript", "(no transcript saved)"))
     print(f"\nFull result: {result_path}")
 
-    sys.exit(0 if passed else 1)
+    # end_reason matching only proves the call terminated the way it was supposed to — it
+    # says nothing about whether the recruiter's behavior along the way was actually right
+    # (right questions, nothing it shouldn't have said, etc). The judge reads the transcript
+    # against the scenario's test_case/expected text for that; see judge.py.
+    from judge import judge_call, print_verdict
+
+    verdict = judge_call(scenario, result)
+    print_verdict(verdict)
+
+    judge_path = result_path.rsplit(".json", 1)[0] + ".judge.json"
+    with open(judge_path, "w", encoding="utf-8") as f:
+        json.dump(verdict, f, indent=2)
+    print(f"Judge verdict saved: {judge_path}")
+
+    overall_passed = end_reason_passed and verdict.get("verdict") == "PASS"
+    print(f"\n=== OVERALL: {'PASS' if overall_passed else 'FAIL'} ===")
+
+    sys.exit(0 if overall_passed else 1)
 
 
 if __name__ == "__main__":

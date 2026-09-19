@@ -36,6 +36,7 @@ from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.frames.frames import (
     EndWorkerFrame,
+    FunctionCallResultProperties,
     LLMMessagesAppendFrame,
     TranscriptionFrame,
     UserStartedSpeakingFrame,
@@ -318,15 +319,15 @@ screening and should only take about five minutes. Is now a good time to talk?" 
 wait.
 If they are busy, driving, in a meeting, or only have a minute, say exactly, in the same turn,
 with no question in between and without waiting for any further reply: "No problem at all.
-Thank you for your time. We'll reach out another time. Have a wonderful day. Goodbye." Then
-call end_call with reason "not_available" immediately after — in the same turn, right after
-that line, don't continue into the screening, and don't let the call just go quiet without
-calling end_call.
+Thank you for your time. We'll reach out another time. Have a wonderful day. Goodbye." Say that
+closing line exactly once, never repeat it in a later turn. Then call end_call with reason
+"not_available" immediately after — in the same turn, right after that line, don't continue into
+the screening, and don't let the call just go quiet without calling end_call.
 This "not a good time" handling applies for the whole call, not just the opening — if the
 candidate says at ANY point they need to stop, can't talk right now, or need to reschedule, say
-that exact same line immediately and call end_call with reason "not_available" right after —
-don't try to finish the remaining questions first, and don't stop before actually calling
-end_call.
+that exact same closing line immediately and call end_call with reason "not_available" right
+after — don't try to finish the remaining questions first, and don't stop
+before actually calling end_call.
 
 If at any point the candidate says something like "stop calling me," "take me off your list,"
 "don't contact me again," or otherwise clearly asks not to be contacted — this is different
@@ -542,6 +543,7 @@ async def end_call(params: FunctionCallParams, call_outcome: dict, candidate_spo
     line or heard anything — it hallucinated a name mismatch out of nothing."""
     reason = params.arguments.get("reason")
     call_outcome["end_reason"] = reason
+    messages = params.context.messages if params.context else []
     if reason != "silence_timed_out" and not candidate_spoke["flag"]:
         logger.warning(
             f"end_call({reason!r}) called before the candidate ever actually spoke — "
@@ -568,7 +570,6 @@ async def end_call(params: FunctionCallParams, call_outcome: dict, candidate_spo
         )
         return
     if reason not in END_CALL_TURN_FLOOR_EXEMPT_REASONS:
-        messages = params.context.messages if params.context else []
         goodbye_already_said = any(
             m.get("role") == "assistant"
             and isinstance(m.get("content"), str)
@@ -579,7 +580,13 @@ async def end_call(params: FunctionCallParams, call_outcome: dict, candidate_spo
             # The goodbye line is already out — accepting here instead of rejecting
             # again is what actually prevents a repeat; a rejection nudge relies on
             # the model obeying "don't say it again," which it isn't reliable at.
-            await params.result_callback({"success": True})
+            # run_llm=False: without it the framework auto-reruns the LLM after this
+            # tool result to produce a "final" reply, which — having nothing left to
+            # say — just repeats the goodbye line a second time before the pipeline
+            # actually stops.
+            await params.result_callback(
+                {"success": True}, properties=FunctionCallResultProperties(run_llm=False)
+            )
             await params.llm.push_frame(EndWorkerFrame())
             return
         spoken_turns = sum(
@@ -618,7 +625,11 @@ async def end_call(params: FunctionCallParams, call_outcome: dict, candidate_spo
                 )
             )
             return
-    await params.result_callback({"success": True})
+    # run_llm=False: see the matching comment above — the closing line was already spoken
+    # before this tool call, so no further LLM turn is needed or wanted.
+    await params.result_callback(
+        {"success": True}, properties=FunctionCallResultProperties(run_llm=False)
+    )
     await params.llm.push_frame(EndWorkerFrame())  # downstream: lets the goodbye audio finish first
 
 
@@ -948,7 +959,17 @@ async def run_bot(room_name: str) -> None:
             assistant_agg,
         ]
     )
-    task = PipelineWorker(pipeline, params=PipelineParams(allow_interruptions=True))
+    # enable_rtvi=False: RTVI is PipelineWorker's default-on data-channel protocol for
+    # talking to a custom RTVI-aware web client — nothing here speaks it (meet.livekit.io
+    # is a plain WebRTC client, RingTrunk phone audio has no data channel at all). Left on,
+    # it broadcasts every internal frame as an RTVI message over the room's data channel;
+    # in agent-vs-agent test runs the candidate bot is also in the room and also has RTVI
+    # on by default, so each bot's outgoing messages get delivered to the other bot too,
+    # which tries to parse them as inbound client messages and fails validation on every
+    # one (hundreds of thousands of "Invalid RTVI transport message" warnings per call) —
+    # enough log/event-loop pressure to starve real turn-taking and make the bot miss the
+    # candidate's replies, falling back to idle-timeout nudges instead of responding.
+    task = PipelineWorker(pipeline, params=PipelineParams(allow_interruptions=True), enable_rtvi=False)
 
     @audiobuffer.event_handler("on_audio_data")
     async def on_audio_data(_buffer, audio: bytes, sample_rate: int, num_channels: int):

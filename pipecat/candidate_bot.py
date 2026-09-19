@@ -60,6 +60,40 @@ Answer every screening question the recruiter asks naturally and truthfully, usi
 listed below. Don't volunteer information for a question they haven't asked yet. Keep answers
 conversational and brief, like a real phone call, not a recitation.
 """,
+    "wrong_number": """
+Important override: ignore the name given above — you are NOT {candidate_name}. You're a
+different person entirely who just happens to have this phone number now (give yourself a
+different first name if it comes up, e.g. "This is Sam"). As soon as the recruiter asks if
+you're {candidate_name} (or uses that name at any point), politely correct them: say that's not
+you, they might have the wrong number. Do not answer any screening questions. If they apologize
+and end the call, accept politely and don't ask questions back or keep the conversation going.
+Keep it brief and natural, not annoyed — just an ordinary person clearing up a mix-up.
+""",
+    "rambling": """
+Answer every screening question the recruiter asks naturally and truthfully, using the facts
+listed below, with one exception: when they ask you to describe your experience, give a long,
+rambling, tangential answer — mention side stories and unrelated details, trail off, circle back
+— before eventually landing on the relevant facts. Say the whole rambling answer in one go, only
+pausing where a real person naturally would mid-thought, don't stop partway through waiting for
+a reaction. For every other question, answer briefly and normally, like a real phone call.
+""",
+    "asks_question": """
+Answer every screening question the recruiter asks naturally and truthfully, using the facts
+listed below. Partway through the call — right after they ask about the location or work
+arrangement — pause and ask them a question of your own first: "Actually, quick question — who
+would I be reporting to on this team?" (this isn't something in the job description, so a good
+recruiter should say they'll check and get back to you rather than guessing an answer). Wait for
+their reply, then answer their original location/work-arrangement question, and continue
+normally with the rest of the screening.
+""",
+    "volunteers_info": """
+Answer every screening question the recruiter asks naturally and truthfully, using the facts
+listed below, with one specific twist: when asked whether you're currently employed (the first
+substantive screening question), answer: "Yes, I am — and by the way, my notice period is two
+weeks." Volunteer that detail unprompted, right there, even though they haven't asked about
+notice period yet. Answer every other question normally when they get to it, including if they
+briefly confirm the notice period again later — just confirm it, don't repeat the whole story.
+""",
 }
 
 
@@ -88,7 +122,7 @@ def build_candidate_prompt(scenario: dict) -> str:
         else "If they ask for a better time to call back, offer a vague but real-sounding "
         "one (e.g. \"maybe later this afternoon\" or \"tomorrow morning\")."
     )
-    behavior_section = behavior_template.format(callback_line=callback_line)
+    behavior_section = behavior_template.format(callback_line=callback_line, candidate_name=candidate_name)
 
     facts_lines = []
     for key in (
@@ -175,7 +209,9 @@ async def run_candidate_bot(room_name: str, scenario: dict) -> None:
             assistant_agg,
         ]
     )
-    task = PipelineWorker(pipeline, params=PipelineParams(allow_interruptions=True))
+    # enable_rtvi=False: see the matching comment in bot.py — RTVI is unused here and,
+    # left on, floods the shared room with cross-bot messages neither side can parse.
+    task = PipelineWorker(pipeline, params=PipelineParams(allow_interruptions=True), enable_rtvi=False)
 
     @transport.event_handler("on_participant_left")
     async def on_participant_left(_transport, _participant_id, _reason):

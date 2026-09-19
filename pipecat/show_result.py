@@ -16,7 +16,7 @@ import os
 
 
 def find_latest() -> str:
-    files = glob.glob(os.path.join("results", "*.json"))
+    files = [f for f in glob.glob(os.path.join("results", "*.json")) if not f.endswith(".judge.json")]
     if not files:
         raise SystemExit("No results yet — results/ is empty. Finish a call first.")
     return max(files, key=os.path.getmtime)
